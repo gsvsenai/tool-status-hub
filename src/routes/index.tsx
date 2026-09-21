@@ -154,7 +154,7 @@ function PainelFerramentas() {
   });
 
   const ferramentas = data ?? [];
-  const emUso = ferramentas.filter((f) => f.status === true).length;
+  const disponiveis = ferramentas.filter((f) => f.status === true).length;
 
   return (
     <div className="min-h-screen">
@@ -211,7 +211,8 @@ function PainelFerramentas() {
           </div>
           {ferramentas.length > 0 && (
             <p className="font-mono-data text-sm text-muted-foreground">
-              {emUso} em uso · {ferramentas.length - emUso} disponíveis
+              {ferramentas.length - disponiveis} em uso · {disponiveis}{" "}
+              disponíveis
             </p>
           )}
         </div>
