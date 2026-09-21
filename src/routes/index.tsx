@@ -146,8 +146,80 @@ function CardFerramenta({
   );
 }
 
+// O ESP32 não envia sinal periódico, então consideramos "conectado" enquanto
+// houve alguma atualização de ferramenta nos últimos ESP32_TIMEOUT_MIN minutos.
+const ESP32_TIMEOUT_MIN = 10;
+
+function IndicadorESP32({ ferramentas }: { ferramentas: Ferramenta[] }) {
+  if (ferramentas.length === 0) {
+    return (
+      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+        ESP32: verificando…
+      </span>
+    );
+  }
+
+  let ultimaIso: string | null = null;
+  let ultimaTs: number | null = null;
+  for (const f of ferramentas) {
+    if (!f.last_update) continue;
+    const p = partesData(f.last_update);
+    if (!p) continue;
+    const t = new Date(
+      Number(p.ano),
+      Number(p.mes) - 1,
+      Number(p.dia),
+      Number(p.h),
+      Number(p.min),
+      Number(p.s),
+    ).getTime();
+    if (ultimaTs === null || t > ultimaTs) {
+      ultimaTs = t;
+      ultimaIso = f.last_update;
+    }
+  }
+
+  if (ultimaTs === null) {
+    return (
+      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+        ESP32: sem registros
+      </span>
+    );
+  }
+
+  const online = Date.now() - ultimaTs <= ESP32_TIMEOUT_MIN * 60_000;
+  return (
+    <span
+      className={`flex items-center gap-2 text-xs font-medium ${
+        online ? "text-status-disponivel" : "text-status-em-uso"
+      }`}
+    >
+      <span
+        className={`h-2 w-2 rounded-full ${
+          online
+            ? "bg-status-disponivel animate-pulse-dot"
+            : "bg-status-em-uso"
+        }`}
+      />
+      {online ? "ESP32 conectado" : "ESP32 sem sinal"}
+      <span className="font-normal text-muted-foreground">
+        · última atividade {tempoRelativo(ultimaIso)}
+      </span>
+    </span>
+  );
+}
+
 function PainelFerramentas() {
-  const { data, isLoading, isError, isFetching, dataUpdatedAt } = useQuery({
+  const {
+    data,
+    isLoading,
+    isError,
+    isFetching,
+    dataUpdatedAt,
+    refetch,
+  } = useQuery({
     queryKey: ["ferramentas"],
     queryFn: fetchFerramentas,
     refetchInterval: 3000,
