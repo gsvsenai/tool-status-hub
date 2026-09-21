@@ -25,20 +25,34 @@ export const Route = createFileRoute("/")({
   component: PainelFerramentas,
 });
 
+// Lê a data/hora exatamente como está gravada no banco, sem converter fuso.
+function partesData(iso: string) {
+  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, ano, mes, dia, h, min, s] = m;
+  return { ano, mes, dia, h, min, s };
+}
+
 function formatarHorario(iso: string | null): string {
   if (!iso) return "—";
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(iso));
+  const p = partesData(iso);
+  if (!p) return "—";
+  return `${p.dia}/${p.mes}, ${p.h}:${p.min}:${p.s}`;
 }
 
 function tempoRelativo(iso: string | null): string {
   if (!iso) return "";
-  const diff = Date.now() - new Date(iso).getTime();
+  const p = partesData(iso);
+  if (!p) return "";
+  const registro = new Date(
+    Number(p.ano),
+    Number(p.mes) - 1,
+    Number(p.dia),
+    Number(p.h),
+    Number(p.min),
+    Number(p.s),
+  ).getTime();
+  const diff = Date.now() - registro;
   const min = Math.floor(diff / 60000);
   if (min < 1) return "agora mesmo";
   if (min < 60) return `há ${min} min`;
@@ -47,24 +61,25 @@ function tempoRelativo(iso: string | null): string {
   return `há ${Math.floor(h / 24)}d`;
 }
 
-function StatusBadge({ emUso }: { emUso: boolean }) {
+function StatusBadge({ disponivel }: { disponivel: boolean }) {
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
-        emUso
-          ? "bg-status-em-uso/15 text-status-em-uso"
-          : "bg-status-disponivel/15 text-status-disponivel"
+        disponivel
+          ? "bg-status-disponivel/15 text-status-disponivel"
+          : "bg-status-em-uso/15 text-status-em-uso"
       }`}
     >
       <span
         className={`h-2 w-2 rounded-full animate-pulse-dot ${
-          emUso ? "bg-status-em-uso" : "bg-status-disponivel"
+          disponivel ? "bg-status-disponivel" : "bg-status-em-uso"
         }`}
       />
-      {emUso ? "Em uso" : "Disponível"}
+      {disponivel ? "Disponível" : "Em uso"}
     </span>
   );
 }
+
 
 function CardFerramenta({
   ferramenta,
