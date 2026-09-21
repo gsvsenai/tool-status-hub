@@ -88,7 +88,7 @@ function CardFerramenta({
   ferramenta: Ferramenta;
   indice: number;
 }) {
-  const emUso = ferramenta.status === true;
+  const disponivel = ferramenta.status === true;
   return (
     <div
       className="animate-card-in rounded-2xl border bg-card p-6 shadow-lg shadow-black/20 transition-colors hover:border-ring/50"
@@ -108,7 +108,7 @@ function CardFerramenta({
             </span>
           </div>
         </div>
-        <StatusBadge emUso={emUso} />
+        <StatusBadge disponivel={disponivel} />
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-4 border-t pt-4">
