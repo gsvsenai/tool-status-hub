@@ -54,7 +54,7 @@ function tempoRelativo(iso: string | null): string {
   ).getTime();
   const diff = Date.now() - registro;
   const min = Math.floor(diff / 60000);
-  if (s < 10) return "agora mesmo";
+  if (min < 1) return "agora mesmo";
   if (min < 60) return `há ${min} min`;
   const h = Math.floor(min / 60);
   if (h < 24) return `há ${h}h`;
