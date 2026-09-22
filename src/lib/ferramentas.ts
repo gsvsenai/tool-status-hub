@@ -27,3 +27,28 @@ export async function fetchFerramentas(): Promise<Ferramenta[]> {
   }
   return res.json();
 }
+
+export interface Esp32Status {
+  id: number;
+  last_ping: string | null;
+}
+
+const SUPABASE_STATUS_URL =
+  "https://ogfkwgrholtagdqvpykj.supabase.co/rest/v1/esp32_status";
+
+export async function fetchEsp32Status(): Promise<Esp32Status | null> {
+  const res = await fetch(
+    `${SUPABASE_STATUS_URL}?select=id,last_ping&id=eq.1&limit=1`,
+    {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+      },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Erro ao buscar status do ESP32 (HTTP ${res.status})`);
+  }
+  const data: Esp32Status[] = await res.json();
+  return data.length > 0 ? data[0] : null;
+}
