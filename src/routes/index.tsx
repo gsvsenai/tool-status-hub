@@ -1,7 +1,13 @@
+import { useState, useEffect, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Wrench, User, Clock, RefreshCw, Wifi, WifiOff } from "lucide-react";
-import { fetchFerramentas, fetchEsp32Status, type Ferramenta } from "@/lib/ferramentas";
+import {
+  fetchFerramentas,
+  SUPABASE_PROJECT_URL,
+  SUPABASE_KEY,
+  type Ferramenta,
+} from "@/lib/ferramentas";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -25,7 +31,6 @@ export const Route = createFileRoute("/")({
   component: PainelFerramentas,
 });
 
-// Lê a data/hora exatamente como está gravada no banco, sem converter fuso.
 function partesData(iso: string) {
   const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
   if (!m) return null;
@@ -79,7 +84,6 @@ function StatusBadge({ disponivel }: { disponivel: boolean }) {
     </span>
   );
 }
-
 
 function CardFerramenta({
   ferramenta,
@@ -146,56 +150,30 @@ function CardFerramenta({
   );
 }
 
-// O ESP32 envia um ping a cada 10s para a tabela esp32_status.
-// Consideramos "conectado" se houve ping nos últimos 13 segundos.
-const ESP32_TIMEOUT_MS = 1_000;
-
-function IndicadorESP32({ lastPing }: { lastPing: string | null }) {
-  if (!lastPing) {
-    return (
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
-        ESP32: sem registros
-      </span>
-    );
-  }
-
-  const p = partesData(lastPing);
-  if (!p) {
-    return (
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
-        ESP32: sem registros
-      </span>
-    );
-  }
-
-  const ts = new Date(
-    Number(p.ano),
-    Number(p.mes) - 1,
-    Number(p.dia),
-    Number(p.h),
-    Number(p.min),
-    Number(p.s),
-  ).getTime();
-
-  const online = Date.now() - ts <= ESP32_TIMEOUT_MS;
+// Indicador do ESP32 atualizado via WebSocket
+function IndicadorESP32({
+  isOnline,
+  lastPingTime,
+}: {
+  isOnline: boolean;
+  lastPingTime: Date | null;
+}) {
   return (
     <span
       className={`flex items-center gap-2 text-xs font-medium ${
-        online ? "text-status-disponivel" : "text-status-em-uso"
+        isOnline ? "text-status-disponivel" : "text-status-em-uso"
       }`}
     >
       <span
         className={`h-2 w-2 rounded-full ${
-          online
+          isOnline
             ? "bg-status-disponivel animate-pulse-dot"
             : "bg-status-em-uso"
         }`}
       />
-      {online ? "ESP32 conectado" : "ESP32 sem sinal"}
+      {isOnline ? "ESP32 conectado" : "ESP32 sem sinal"}
       <span className="font-normal text-muted-foreground">
-        · última atividade {tempoRelativo(lastPing)}
+        · {lastPingTime ? "realtime" : "aguardando..."}
       </span>
     </span>
   );
@@ -215,11 +193,54 @@ function PainelFerramentas() {
     refetchInterval: 3000,
   });
 
-  const { data: esp32Status } = useQuery({
-    queryKey: ["esp32-status"],
-    queryFn: fetchEsp32Status,
-    refetchInterval: 3000,
-  });
+  // Estado local para o indicador em tempo real
+  const [esp32Online, setEsp32Online] = useState(false);
+  const [lastPingTime, setLastPingTime] = useState<Date | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    // Monta a URL de WebSocket nativa do Supabase
+    const wsHost = SUPABASE_PROJECT_URL.replace(/^https?:\/\//, "");
+    const wsUrl = `wss://${wsHost}/realtime/v1/websocket?apikey=${SUPABASE_KEY}&vsn=1.0.0`;
+
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+      // Entra no canal 'esp32-status'
+      const joinMsg = {
+        topic: "realtime:esp32-status",
+        event: "phx_join",
+        payload: { config: { broadcast: { self: false } } },
+        ref: "1",
+      };
+      socket.send(JSON.stringify(joinMsg));
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+
+        // Se for o ping em tempo real enviado pelo ESP32
+        if (msg.event === "broadcast" && msg.payload?.event === "ping") {
+          setEsp32Online(true);
+          setLastPingTime(new Date());
+
+          // Zera o timer: se ficar + de 1,5 segundo sem ping, considera offline
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          timeoutRef.current = setTimeout(() => {
+            setEsp32Online(false);
+          }, 1500);
+        }
+      } catch (err) {
+        console.error("Erro ao ler WebSocket do Realtime:", err);
+      }
+    };
+
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      socket.close();
+    };
+  }, []);
 
   const ferramentas = data ?? [];
   const disponiveis = ferramentas.filter((f) => f.status === true).length;
@@ -267,7 +288,10 @@ function PainelFerramentas() {
                 </span>
               )}
             </div>
-            <IndicadorESP32 lastPing={esp32Status?.last_ping ?? null} />
+            <IndicadorESP32
+              isOnline={esp32Online}
+              lastPingTime={lastPingTime}
+            />
           </div>
         </div>
       </header>
