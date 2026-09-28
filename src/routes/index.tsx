@@ -250,7 +250,7 @@ function PainelFerramentas() {
           // Se ficar + de 2.5s sem ping, aí sim considera queda de conexão real
           timeoutRef.current = setTimeout(() => {
             setEsp32Online(false);
-          }, 2500);
+          }, 3500);
         }
 
         // B) Processa atualizações no banco de dados em tempo real
