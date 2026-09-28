@@ -247,7 +247,7 @@ function PainelFerramentas() {
 
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-          // Se ficar + de 2.5s sem ping, aí sim considera queda de conexão real
+          // Se ficar + de 3.5s sem ping, aí sim considera queda de conexão real
           timeoutRef.current = setTimeout(() => {
             setEsp32Online(false);
           }, 3500);
