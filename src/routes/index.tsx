@@ -200,14 +200,29 @@ function PainelFerramentas() {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+  let socket: WebSocket | null = null;
+  let isComponentMounted = true;
+  let reconnectTimeout: NodeJS.Timeout | null = null;
+
+  function conectarWebSocket() {
+    // Evita abrir múltiplos soquetes duplicados
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
     const wsHost = SUPABASE_PROJECT_URL.replace(/^https?:\/\//, "");
     const wsUrl = `wss://${wsHost}/realtime/v1/websocket?apikey=${SUPABASE_KEY}&vsn=1.0.0`;
 
-    const socket = new WebSocket(wsUrl);
+    socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
-      // 1. Inscrição para receber o ping de presença do ESP32
-      socket.send(
+      if (!isComponentMounted) return;
+
+      // Re-busca os dados mais recentes imediatamente assim que reconectar
+      queryClient.invalidateQueries({ queryKey: ["ferramentas"] });
+
+      // 1. Inscrição para o broadcast do ESP32
+      socket?.send(
         JSON.stringify({
           topic: "realtime:esp32-status",
           event: "phx_join",
@@ -216,8 +231,8 @@ function PainelFerramentas() {
         })
       );
 
-      // 2. Inscrição para escutar mudanças no banco (Postgres Changes)
-      socket.send(
+      // 2. Inscrição para escutar mudanças no banco
+      socket?.send(
         JSON.stringify({
           topic: "realtime:public:Ferramentas",
           event: "phx_join",
@@ -234,10 +249,12 @@ function PainelFerramentas() {
     };
 
     socket.onmessage = (event) => {
+      if (!isComponentMounted) return;
+
       try {
         const msg = JSON.parse(event.data);
 
-        // A) Processa os pings (Detector de queda <1s)
+        // A) Processa os pings
         if (
           msg.event === "broadcast" &&
           (msg.payload?.event === "ping" || msg.payload?.payload?.event === "ping")
@@ -247,13 +264,14 @@ function PainelFerramentas() {
 
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-          // Se ficar + de 3.5s sem ping, aí sim considera queda de conexão real
           timeoutRef.current = setTimeout(() => {
-            setEsp32Online(false);
+            if (isComponentMounted) {
+              setEsp32Online(false);
+            }
           }, 3500);
         }
 
-        // B) Processa atualizações no banco de dados em tempo real
+        // B) Processa atualizações no banco de dados
         if (msg.event === "postgres_changes") {
           queryClient.invalidateQueries({ queryKey: ["ferramentas"] });
         }
@@ -262,11 +280,38 @@ function PainelFerramentas() {
       }
     };
 
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      socket.close();
+    socket.onclose = () => {
+      if (!isComponentMounted) return;
+      setEsp32Online(false);
+
+      // Tenta reconectar em 2 segundos se a conexão for perdida
+      reconnectTimeout = setTimeout(() => {
+        conectarWebSocket();
+      }, 2000);
     };
-  }, [queryClient]);
+
+    socket.onerror = () => {
+      socket?.close();
+    };
+  }
+
+  // Tenta reconectar imediatamente se a placa de rede da máquina voltar
+  const handleNetworkOnline = () => {
+    queryClient.invalidateQueries({ queryKey: ["ferramentas"] });
+    conectarWebSocket();
+  };
+
+  window.addEventListener("online", handleNetworkOnline);
+  conectarWebSocket();
+
+  return () => {
+    isComponentMounted = false;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    window.removeEventListener("online", handleNetworkOnline);
+    if (socket) socket.close();
+  };
+}, [queryClient]);
 
   const ferramentas = data ?? [];
   const disponiveis = ferramentas.filter((f) => f.status === true).length;
