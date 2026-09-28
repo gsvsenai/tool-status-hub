@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Wrench, User, Clock, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import {
   fetchFerramentas,
@@ -150,7 +150,6 @@ function CardFerramenta({
   );
 }
 
-// Indicador do ESP32 atualizado via WebSocket
 function IndicadorESP32({
   isOnline,
   lastPingTime,
@@ -180,6 +179,9 @@ function IndicadorESP32({
 }
 
 function PainelFerramentas() {
+  const queryClient = useQueryClient();
+
+  // Consulta mantida sem polling desnecessário
   const {
     data,
     isLoading,
@@ -190,46 +192,70 @@ function PainelFerramentas() {
   } = useQuery({
     queryKey: ["ferramentas"],
     queryFn: fetchFerramentas,
-    refetchInterval: 3000,
+    staleTime: Infinity,
   });
 
-  // Estado local para o indicador em tempo real
   const [esp32Online, setEsp32Online] = useState(false);
   const [lastPingTime, setLastPingTime] = useState<Date | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Monta a URL de WebSocket nativa do Supabase
     const wsHost = SUPABASE_PROJECT_URL.replace(/^https?:\/\//, "");
     const wsUrl = `wss://${wsHost}/realtime/v1/websocket?apikey=${SUPABASE_KEY}&vsn=1.0.0`;
 
     const socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
-      // Entra no canal 'esp32-status'
-      const joinMsg = {
-        topic: "realtime:esp32-status",
-        event: "phx_join",
-        payload: { config: { broadcast: { self: false } } },
-        ref: "1",
-      };
-      socket.send(JSON.stringify(joinMsg));
+      // 1. Inscrição para receber o ping de presença do ESP32
+      socket.send(
+        JSON.stringify({
+          topic: "realtime:esp32-status",
+          event: "phx_join",
+          payload: { config: { broadcast: { self: false } } },
+          ref: "1",
+        })
+      );
+
+      // 2. Inscrição para escutar mudanças no banco (Postgres Changes)
+      socket.send(
+        JSON.stringify({
+          topic: "realtime:public:Ferramentas",
+          event: "phx_join",
+          payload: {
+            config: {
+              postgres_changes: [
+                { event: "*", schema: "public", table: "Ferramentas" },
+              ],
+            },
+          },
+          ref: "2",
+        })
+      );
     };
 
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
 
-        // Se for o ping em tempo real enviado pelo ESP32
-        if (msg.event === "broadcast" && msg.payload?.event === "ping") {
+        // A) Processa os pings (Detector de queda <1s)
+        if (
+          msg.event === "broadcast" &&
+          (msg.payload?.event === "ping" || msg.payload?.payload?.event === "ping")
+        ) {
           setEsp32Online(true);
           setLastPingTime(new Date());
 
-          // Zera o timer: se ficar + de 1,5 segundo sem ping, considera offline
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+          // Se ficar + de 750ms sem ping, marca como desconectado imediatamente
           timeoutRef.current = setTimeout(() => {
             setEsp32Online(false);
-          }, 1500);
+          }, 750);
+        }
+
+        // B) Processa atualizações no banco de dados em tempo real
+        if (msg.event === "postgres_changes") {
+          queryClient.invalidateQueries({ queryKey: ["ferramentas"] });
         }
       } catch (err) {
         console.error("Erro ao ler WebSocket do Realtime:", err);
@@ -240,7 +266,7 @@ function PainelFerramentas() {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       socket.close();
     };
-  }, []);
+  }, [queryClient]);
 
   const ferramentas = data ?? [];
   const disponiveis = ferramentas.filter((f) => f.status === true).length;
@@ -254,12 +280,8 @@ function PainelFerramentas() {
               <Wrench className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">
-                Smart Kanban
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                Painel de ferramentas
-              </p>
+              <h1 className="text-xl font-bold tracking-tight">Smart Kanban</h1>
+              <p className="text-xs text-muted-foreground">Painel de ferramentas</p>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
@@ -302,8 +324,7 @@ function PainelFerramentas() {
           <div className="flex items-center gap-4">
             {ferramentas.length > 0 && (
               <p className="font-mono-data text-sm text-muted-foreground">
-                {ferramentas.length - disponiveis} em uso · {disponiveis}{" "}
-                disponíveis
+                {ferramentas.length - disponiveis} em uso · {disponiveis} disponíveis
               </p>
             )}
             <button
