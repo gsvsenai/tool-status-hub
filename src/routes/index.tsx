@@ -172,7 +172,6 @@ function IndicadorESP32({
       />
       {isOnline ? "ESP32 conectado" : "ESP32 sem sinal"}
       <span className="font-normal text-muted-foreground">
-        · {lastPingTime ? "realtime" : "aguardando..."}
       </span>
     </span>
   );
