@@ -123,9 +123,11 @@ function CardFerramenta({
               Último usuário
             </p>
             <p className="font-mono-data text-sm">
-              {ferramenta.last_user != null
-                ? `Usuário #${ferramenta.last_user}`
-                : "—"}
+              {ferramenta.Usuarios?.nome 
+                ? ferramenta.Usuarios.nome 
+                : ferramenta.last_user != null 
+                  ? `Usuário #${ferramenta.last_user}` 
+                  : "—"}
             </p>
           </div>
         </div>
