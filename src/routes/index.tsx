@@ -1,10 +1,15 @@
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { buscarFerramentas } from "@/lib/ferramentas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Wrench, AlertTriangle, CheckCircle2 } from "lucide-react";
 
-export function Component() {
+export const Route = createFileRoute("/")({
+  component: DashboardComponent,
+});
+
+function DashboardComponent() {
   const [ferramentas, setFerramentas] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -103,5 +108,3 @@ export function Component() {
     </div>
   );
 }
-
-export default Component;
