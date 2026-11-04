@@ -1,419 +1,107 @@
-import { useState, useEffect, useRef } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Wrench, User, Clock, RefreshCw, Wifi, WifiOff } from "lucide-react";
-import {
-  fetchFerramentas,
-  SUPABASE_PROJECT_URL,
-  SUPABASE_KEY,
-  type Ferramenta,
-} from "@/lib/ferramentas";
+import { useEffect, useState } from "react";
+import { buscarFerramentas } from "@/lib/ferramentas";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { RefreshCw, Wrench, AlertTriangle, CheckCircle2 } from "lucide-react";
 
-export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Smart Kanban — Painel de Ferramentas" },
-      {
-        name: "description",
-        content:
-          "Painel em tempo real com o status das ferramentas: disponível ou em uso, último usuário e horário da alteração.",
-      },
-      { property: "og:title", content: "Smart Kanban — Painel de Ferramentas" },
-      {
-        property: "og:description",
-        content:
-          "Acompanhe em tempo real o status das ferramentas registradas pelo ESP32.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-    ],
-  }),
-  component: PainelFerramentas,
-});
+export function Component() {
+  const [ferramentas, setFerramentas] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [erro, setErro] = useState<string | null>(null);
 
-function partesData(iso: string) {
-  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
-  if (!m) return null;
-  const [, ano, mes, dia, h, min, s] = m;
-  return { ano, mes, dia, h, min, s };
-}
-
-function formatarHorario(iso: string | null): string {
-  if (!iso) return "—";
-  const p = partesData(iso);
-  if (!p) return "—";
-  return `${p.dia}/${p.mes}, ${p.h}:${p.min}:${p.s}`;
-}
-
-function tempoRelativo(iso: string | null): string {
-  if (!iso) return "";
-  const p = partesData(iso);
-  if (!p) return "";
-  const registro = new Date(
-    Number(p.ano),
-    Number(p.mes) - 1,
-    Number(p.dia),
-    Number(p.h),
-    Number(p.min),
-    Number(p.s),
-  ).getTime();
-  const diff = Date.now() - registro;
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return "agora mesmo";
-  if (min < 60) return `há ${min} min`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `há ${h}h`;
-  return `há ${Math.floor(h / 24)}d`;
-}
-
-function StatusBadge({ disponivel }: { disponivel: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
-        disponivel
-          ? "bg-status-disponivel/15 text-status-disponivel"
-          : "bg-status-em-uso/15 text-status-em-uso"
-      }`}
-    >
-      <span
-        className={`h-2 w-2 rounded-full animate-pulse-dot ${
-          disponivel ? "bg-status-disponivel" : "bg-status-em-uso"
-        }`}
-      />
-      {disponivel ? "Disponível" : "Em uso"}
-    </span>
-  );
-}
-
-function CardFerramenta({
-  ferramenta,
-  indice,
-}: {
-  ferramenta: Ferramenta;
-  indice: number;
-}) {
-  const disponivel = ferramenta.status === true;
-  return (
-    <div
-      className="animate-card-in rounded-2xl border bg-card p-6 shadow-lg shadow-black/20 transition-colors hover:border-ring/50"
-      style={{ animationDelay: `${indice * 60}ms` }}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary">
-            <Wrench className="h-5 w-5 text-secondary-foreground" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold leading-tight">
-              {ferramenta.nome}
-            </h2>
-            <span className="font-mono-data text-xs text-muted-foreground">
-              ID {ferramenta.id}
-            </span>
-          </div>
-        </div>
-        <StatusBadge disponivel={disponivel} />
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-4 border-t pt-4">
-        <div className="flex items-center gap-2">
-          <User className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Último usuário
-            </p>
-            <p className="font-mono-data text-sm">
-              {ferramenta.Usuarios?.nome 
-                ? ferramenta.Usuarios.nome 
-                : ferramenta.last_user != null 
-                  ? `Usuário #${ferramenta.last_user}` 
-                  : "—"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Alteração
-            </p>
-            <p className="font-mono-data text-sm">
-              {formatarHorario(ferramenta.last_update)}
-              {ferramenta.last_update && (
-                <span className="ml-1 text-xs text-muted-foreground">
-                  ({tempoRelativo(ferramenta.last_update)})
-                </span>
-              )}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function IndicadorESP32({
-  isOnline,
-  lastPingTime,
-}: {
-  isOnline: boolean;
-  lastPingTime: Date | null;
-}) {
-  return (
-    <span
-      className={`flex items-center gap-2 text-xs font-medium ${
-        isOnline ? "text-status-disponivel" : "text-status-em-uso"
-      }`}
-    >
-      <span
-        className={`h-2 w-2 rounded-full ${
-          isOnline
-            ? "bg-status-disponivel animate-pulse-dot"
-            : "bg-status-em-uso"
-        }`}
-      />
-      {isOnline ? "ESP32 conectado" : "ESP32 sem sinal"}
-      <span className="font-normal text-muted-foreground">
-      </span>
-    </span>
-  );
-}
-
-function PainelFerramentas() {
-  const queryClient = useQueryClient();
-
-  // Consulta mantida sem polling desnecessário
-  const {
-    data,
-    isLoading,
-    isError,
-    isFetching,
-    dataUpdatedAt,
-    refetch,
-  } = useQuery({
-    queryKey: ["ferramentas"],
-    queryFn: fetchFerramentas,
-    staleTime: Infinity,
-  });
-
-  const [esp32Online, setEsp32Online] = useState(false);
-  const [lastPingTime, setLastPingTime] = useState<Date | null>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const carregarDados = async () => {
+    setLoading(true);
+    setErro(null);
+    try {
+      const dados = await buscarFerramentas();
+      setFerramentas(Array.isArray(dados) ? dados : dados.data || []);
+    } catch (err: any) {
+      setErro("Não foi possível carregar as ferramentas. Verificando conexão...");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-  let socket: WebSocket | null = null;
-  let isComponentMounted = true;
-  let reconnectTimeout: NodeJS.Timeout | null = null;
-
-  function conectarWebSocket() {
-    // Evita abrir múltiplos soquetes duplicados
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-      return;
-    }
-
-    const wsHost = SUPABASE_PROJECT_URL.replace(/^https?:\/\//, "");
-    const wsUrl = `wss://${wsHost}/realtime/v1/websocket?apikey=${SUPABASE_KEY}&vsn=1.0.0`;
-
-    socket = new WebSocket(wsUrl);
-
-    socket.onopen = () => {
-      if (!isComponentMounted) return;
-
-      // Re-busca os dados mais recentes imediatamente assim que reconectar
-      queryClient.invalidateQueries({ queryKey: ["ferramentas"] });
-
-      // 1. Inscrição para o broadcast do ESP32
-      socket?.send(
-        JSON.stringify({
-          topic: "realtime:esp32-status",
-          event: "phx_join",
-          payload: { config: { broadcast: { self: false } } },
-          ref: "1",
-        })
-      );
-
-      // 2. Inscrição para escutar mudanças no banco
-      socket?.send(
-        JSON.stringify({
-          topic: "realtime:public:Ferramentas",
-          event: "phx_join",
-          payload: {
-            config: {
-              postgres_changes: [
-                { event: "*", schema: "public", table: "Ferramentas" },
-              ],
-            },
-          },
-          ref: "2",
-        })
-      );
-    };
-
-    socket.onmessage = (event) => {
-      if (!isComponentMounted) return;
-
-      try {
-        const msg = JSON.parse(event.data);
-
-        // A) Processa os pings
-        if (
-          msg.event === "broadcast" &&
-          (msg.payload?.event === "ping" || msg.payload?.payload?.event === "ping")
-        ) {
-          setEsp32Online(true);
-          setLastPingTime(new Date());
-
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-          timeoutRef.current = setTimeout(() => {
-            if (isComponentMounted) {
-              setEsp32Online(false);
-            }
-          }, 3500);
-        }
-
-        // B) Processa atualizações no banco de dados
-        if (msg.event === "postgres_changes") {
-          queryClient.invalidateQueries({ queryKey: ["ferramentas"] });
-        }
-      } catch (err) {
-        console.error("Erro ao ler WebSocket do Realtime:", err);
-      }
-    };
-
-    socket.onclose = () => {
-      if (!isComponentMounted) return;
-      setEsp32Online(false);
-
-      // Tenta reconectar em 2 segundos se a conexão for perdida
-      reconnectTimeout = setTimeout(() => {
-        conectarWebSocket();
-      }, 2000);
-    };
-
-    socket.onerror = () => {
-      socket?.close();
-    };
-  }
-
-  // Tenta reconectar imediatamente se a placa de rede da máquina voltar
-  const handleNetworkOnline = () => {
-    queryClient.invalidateQueries({ queryKey: ["ferramentas"] });
-    conectarWebSocket();
-  };
-
-  window.addEventListener("online", handleNetworkOnline);
-  conectarWebSocket();
-
-  return () => {
-    isComponentMounted = false;
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    window.removeEventListener("online", handleNetworkOnline);
-    if (socket) socket.close();
-  };
-}, [queryClient]);
-
-  const ferramentas = data ?? [];
-  const disponiveis = ferramentas.filter((f) => f.status === true).length;
+    carregarDados();
+    const intervalo = setInterval(carregarDados, 10000); // Atualiza a cada 10s
+    return () => clearInterval(intervalo);
+  }, []);
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
-              <Wrench className="h-5 w-5 text-primary-foreground" />
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
+      <div className="max-w-5xl mx-auto space-y-6">
+        {/* Cabeçalho */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500">
+              <Wrench className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">Smart Kanban</h1>
-              <p className="text-xs text-muted-foreground">Painel de ferramentas</p>
+              <h1 className="text-2xl font-bold tracking-tight">Smart Kanban</h1>
+              <p className="text-sm text-slate-400">Painel de controle de ferramentas</p>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1.5">
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              {isError ? (
-                <span className="flex items-center gap-2 text-destructive">
-                  <WifiOff className="h-4 w-4" /> Sem conexão com o banco
-                </span>
-              ) : (
-                <span className="flex items-center gap-2">
-                  {isFetching ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Wifi className="h-4 w-4 text-status-disponivel" />
-                  )}
-                  Atualizado às{" "}
-                  <span className="font-mono-data">
-                    {dataUpdatedAt
-                      ? new Intl.DateTimeFormat("pt-BR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        }).format(new Date(dataUpdatedAt))
-                      : "—"}
-                  </span>
-                </span>
-              )}
-            </div>
-            <IndicadorESP32
-              isOnline={esp32Online}
-              lastPingTime={lastPingTime}
-            />
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <h2 className="text-2xl font-bold">Ferramentas</h2>
-          <div className="flex items-center gap-4">
-            {ferramentas.length > 0 && (
-              <p className="font-mono-data text-sm text-muted-foreground">
-                {ferramentas.length - disponiveis} em uso · {disponiveis} disponíveis
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="inline-flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium transition-colors hover:border-ring/50 hover:bg-secondary disabled:opacity-60"
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
-              />
-              Atualizar
-            </button>
-          </div>
+          <Button 
+            onClick={carregarDados} 
+            variant="outline" 
+            className="border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-200"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
         </div>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-3 py-24 text-muted-foreground">
-            <RefreshCw className="h-5 w-5 animate-spin" />
-            Carregando ferramentas…
-          </div>
-        ) : isError ? (
-          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-8 text-center">
-            <WifiOff className="mx-auto h-8 w-8 text-destructive" />
-            <p className="mt-3 font-semibold">
-              Não foi possível carregar as ferramentas
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Verificando novamente automaticamente…
-            </p>
-          </div>
-        ) : ferramentas.length === 0 ? (
-          <div className="rounded-2xl border p-8 text-center text-muted-foreground">
-            Nenhuma ferramenta cadastrada na tabela ainda.
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {ferramentas.map((f, i) => (
-              <CardFerramenta key={f.id} ferramenta={f} indice={i} />
-            ))}
+        {/* Alerta de Erro */}
+        {erro && (
+          <div className="bg-red-950/40 border border-red-900/50 rounded-xl p-6 text-center space-y-2">
+            <AlertTriangle className="w-8 h-8 text-red-500 mx-auto" />
+            <h2 className="text-lg font-semibold text-red-200">Não foi possível carregar as ferramentas</h2>
+            <p className="text-sm text-red-400">{erro}</p>
+            <p className="text-xs text-slate-500 mt-2">Nota: Se a API do Render estiver iniciando após inatividade, aguarde alguns segundos e clique em Atualizar.</p>
           </div>
         )}
-      </main>
+
+        {/* Listagem de Ferramentas */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {loading && ferramentas.length === 0 ? (
+            <div className="col-span-full text-center py-12 text-slate-500">
+              Carregando estado das ferramentas...
+            </div>
+          ) : ferramentas.length > 0 ? (
+            ferramentas.map((ferramenta) => (
+              <Card key={ferramenta.id} className="bg-slate-900 border-slate-800 text-slate-100">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-base font-medium">
+                    {ferramenta.nome || `Ferramenta #${ferramenta.id}`}
+                  </CardTitle>
+                  {ferramenta.status ? (
+                    <span className="flex items-center text-xs text-emerald-400 bg-emerald-950/50 px-2 py-1 rounded-full border border-emerald-900">
+                      <CheckCircle2 className="w-3 h-3 mr-1" /> Disponível
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-xs text-amber-400 bg-amber-950/50 px-2 py-1 rounded-full border border-amber-900">
+                      <Wrench className="w-3 h-3 mr-1" /> Em Uso
+                    </span>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <div className="text-xs text-slate-400 space-y-1">
+                    <p>Último usuário ID: {ferramenta.last_user || "Nenhum"}</p>
+                    <p>Atualizado em: {ferramenta.last_update ? new Date(ferramenta.last_update).toLocaleTimeString() : "Recentemente"}</p>
+                  </div>
+                </CardContent>
+              </CardCard>
+            ))
+          ) : !erro && !loading ? (
+            <div className="col-span-full text-center py-12 text-slate-500">
+              Nenhuma ferramenta cadastrada no momento.
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
+
+export default Component;
