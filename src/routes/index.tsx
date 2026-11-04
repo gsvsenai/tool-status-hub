@@ -24,7 +24,7 @@ export function Component() {
 
   useEffect(() => {
     carregarDados();
-    const intervalo = setInterval(carregarDados, 10000); // Atualiza a cada 10s
+    const intervalo = setInterval(carregarDados, 10000);
     return () => clearInterval(intervalo);
   }, []);
 
@@ -91,7 +91,7 @@ export function Component() {
                     <p>Atualizado em: {ferramenta.last_update ? new Date(ferramenta.last_update).toLocaleTimeString() : "Recentemente"}</p>
                   </div>
                 </CardContent>
-              </CardCard>
+              </Card>
             ))
           ) : !erro && !loading ? (
             <div className="col-span-full text-center py-12 text-slate-500">
