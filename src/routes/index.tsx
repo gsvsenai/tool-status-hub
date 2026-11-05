@@ -195,12 +195,32 @@ function PainelFerramentas() {
   const [esp32Online, setEsp32Online] = useState(false);
   const [lastPingTime, setLastPingTime] = useState<Date | null>(null);
 
-  // Intervalo de atualização automática do painel (fallback integrado)
+  // Consulta periódica do status do ESP32 na API do Render e atualização dos dados
   useEffect(() => {
-    const intervalo = setInterval(() => {
+    const verificarStatusESP = async () => {
+      try {
+        const res = await fetch("https://sk3000-api.onrender.com/api/esp32/status");
+        const json = await res.json();
+        setEsp32Online(json.online);
+        if (json.online) {
+          setLastPingTime(new Date(json.last_ping || Date.now()));
+        }
+      } catch (err) {
+        setEsp32Online(false);
+      }
+    };
+
+    verificarStatusESP();
+    const intervaloStatus = setInterval(verificarStatusESP, 5000);
+
+    const intervaloDados = setInterval(() => {
       queryClient.invalidateQueries({ queryKey: ["ferramentas"] });
     }, 10000);
-    return () => clearInterval(intervalo);
+
+    return () => {
+      clearInterval(intervaloStatus);
+      clearInterval(intervaloDados);
+    };
   }, [queryClient]);
 
   const ferramentas = data ?? [];
