@@ -29,33 +29,28 @@ export const Route = createFileRoute("/")({
   component: PainelFerramentas,
 });
 
-function partesData(iso: string) {
-  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
-  if (!m) return null;
-  const [, ano, mes, dia, h, min, s] = m;
-  return { ano, mes, dia, h, min, s };
-}
-
+// O Supabase devolve timestamptz em UTC (ex.: 2026-11-09T14:00:00+00:00).
+// Usamos Date para respeitar o fuso e exibimos no horário de São Paulo.
 function formatarHorario(iso: string | null): string {
   if (!iso) return "—";
-  const p = partesData(iso);
-  if (!p) return "—";
-  return `${p.dia}/${p.mes}, ${p.h}:${p.min}:${p.s}`;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(d);
 }
 
 function tempoRelativo(iso: string | null): string {
   if (!iso) return "";
-  const p = partesData(iso);
-  if (!p) return "";
-  const registro = new Date(
-    Number(p.ano),
-    Number(p.mes) - 1,
-    Number(p.dia),
-    Number(p.h),
-    Number(p.min),
-    Number(p.s),
-  ).getTime();
-  const diff = Date.now() - registro;
+  const registro = new Date(iso).getTime();
+  if (isNaN(registro)) return "";
+  const diff = Math.max(0, Date.now() - registro);
   const min = Math.floor(diff / 60000);
   if (min < 1) return "agora mesmo";
   if (min < 60) return `há ${min} min`;
