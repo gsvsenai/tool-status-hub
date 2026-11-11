@@ -59,6 +59,11 @@ function tempoRelativo(iso: string | null): string {
   return `há ${Math.floor(h / 24)}d`;
 }
 
+interface UsuarioLogado {
+  id: number | null;
+  nome: string | null;
+}
+
 function StatusBadge({ disponivel }: { disponivel: boolean }) {
   return (
     <span
@@ -171,6 +176,35 @@ function IndicadorESP32({
   );
 }
 
+function IndicadorLogin({
+  isOnline,
+  usuario,
+}: {
+  isOnline: boolean;
+  usuario: UsuarioLogado | null;
+}) {
+  if (!isOnline) {
+    return (
+      <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <User className="h-3.5 w-3.5" />
+        Login indisponível
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`flex items-center gap-2 text-xs font-medium ${
+        usuario ? "text-status-disponivel" : "text-muted-foreground"
+      }`}
+    >
+      <User className="h-3.5 w-3.5" />
+      {usuario
+        ? `Logado: ${usuario.nome ?? `Usuário #${usuario.id}`}`
+        : "Ninguém logado"}
+    </span>
+  );
+}
+
 function PainelFerramentas() {
   const queryClient = useQueryClient();
 
@@ -189,6 +223,7 @@ function PainelFerramentas() {
 
   const [esp32Online, setEsp32Online] = useState(false);
   const [lastPingTime, setLastPingTime] = useState<Date | null>(null);
+  const [usuarioLogado, setUsuarioLogado] = useState<UsuarioLogado | null>(null);
 
   // Consulta periódica do status do ESP32 na API do Render e atualização dos dados
   useEffect(() => {
@@ -197,11 +232,13 @@ function PainelFerramentas() {
         const res = await fetch("https://sk3000-api.onrender.com/api/esp32/status");
         const json = await res.json();
         setEsp32Online(json.online);
+        setUsuarioLogado(json.online ? json.logged_user ?? null : null);
         if (json.online) {
           setLastPingTime(new Date(json.last_ping || Date.now()));
         }
       } catch (err) {
         setEsp32Online(false);
+        setUsuarioLogado(null);
       }
     };
 
@@ -264,6 +301,7 @@ function PainelFerramentas() {
               isOnline={esp32Online}
               lastPingTime={lastPingTime}
             />
+            <IndicadorLogin isOnline={esp32Online} usuario={usuarioLogado} />
           </div>
         </div>
       </header>
